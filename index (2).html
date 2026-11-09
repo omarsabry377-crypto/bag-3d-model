@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Canvas Tote Bag – 3D</title>
+<style>
+:root{--bg1:#f6f3ee;--bg2:#d8d1c6;--fg:#2b2622;--btn:rgba(255,255,255,.85);color-scheme:light dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg1:#34302c;--bg2:#161412;--fg:#f0ebe4;--btn:rgba(50,45,41,.85)}}
+:root[data-theme="dark"]{--bg1:#34302c;--bg2:#161412;--fg:#f0ebe4;--btn:rgba(50,45,41,.85)}
+html,body{height:100%;margin:0}
+body{background:radial-gradient(ellipse at 50% 35%,var(--bg1),var(--bg2));color:var(--fg);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden}
+#c{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+#ui{position:fixed;left:0;right:0;bottom:max(14px,env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none}
+#ui div{display:flex;gap:8px;pointer-events:auto}
+button{font:inherit;font-size:14px;color:var(--fg);background:var(--btn);border:1px solid rgba(128,128,128,.35);border-radius:999px;padding:8px 16px;cursor:pointer}
+button[aria-pressed="true"]{outline:2px solid #b3262a}
+small{opacity:.65;font-size:12px}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui"><div><button id="rot" aria-pressed="false">Auto‑rotate</button><button id="reset">Reset view</button></div><small>Drag to orbit · scroll or pinch to zoom · right‑drag to pan</small></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+const TAU=Math.PI*2, Ht=1.6, NU=240, NV=72;
+const col={red:'#b3262a',navy:'#1d2a4a',cream:'#ecd9b5',orange:'#d98a1f',brown:'#8a4a24',olive:'#7a7a35',beige:'#d8bd8a'};
+const sm=(a,b,x)=>{x=Math.min(1,Math.max(0,(x-a)/(b-a)));return x*x*(3-2*x)};
+
+/* ---------- profile of the bag body ---------- */
+const A=v=>0.93+0.17*v+0.05*Math.sin(Math.PI*v);
+const B=v=>0.30+0.07*Math.sin(Math.PI*v)-0.18*sm(0.55,1,v);
+const NX=v=>5-2.6*sm(0.2,1,v);
+function pt(t,v){
+  const a=A(v),b=B(v),n=NX(v),c=Math.cos(t),s=Math.sin(t);
+  let x=a*Math.sign(c)*Math.pow(Math.abs(c),2/n), z=b*Math.sign(s)*Math.pow(Math.abs(s),2/n);
+  const u=t/TAU, w=sm(0.35,1,v)*0.9+0.1;
+  const d=w*(0.011*Math.sin(u*TAU*9+v*5)+0.008*Math.sin(u*TAU*23-v*9)+0.006*Math.sin(v*34+u*TAU*5));
+  const ox=x/a, oz=z/b, l=Math.hypot(ox,oz)||1;
+  return [x+d*ox/l, v*Ht, z+d*oz/l];
+}
+function zAt(x,v){const a=A(v),b=B(v),n=NX(v);return b*Math.pow(Math.max(0,1-Math.pow(Math.abs(x)/a,n)),1/n)}
+
+/* arc-length parametrisation so the texture isn't stretched around corners */
+const arc=[0];{let p=pt(0,.5);for(let i=1;i<=NU;i++){const q=pt(TAU*i/NU,.5);arc.push(arc[i-1]+Math.hypot(q[0]-p[0],q[2]-p[2]));p=q}}
+const Ltot=arc[NU];
+
+/* ---------- weave helpers ---------- */
+function mk(w,h){const c=document.createElement('canvas');c.width=w;c.height=h;return c}
+function weave(g,w,h,alpha){
+  const t=mk(4,4),k=t.getContext('2d');
+  k.fillStyle='rgba(0,0,0,'+alpha+')';k.fillRect(0,0,4,1);k.fillRect(0,0,1,4);
+  k.fillStyle='rgba(255,255,255,'+alpha*.6+')';k.fillRect(2,2,2,2);
+  g.fillStyle=g.createPattern(t,'repeat');g.fillRect(0,0,w,h);
+}
+
+/* ---------- colour texture: pattern redrawn from the reference ---------- */
+const W=2048,H=1024, tex=mk(W,H), g=tex.getContext('2d');
+g.fillStyle=col.cream;g.fillRect(0,0,W,H);
+const fw=W*2.0/Ltot, s=fw/990, ky=H/800;
+const bands=[[450,492,'red'],[506,518,'navy'],[532,552,'navy'],[566,642,'red'],[656,668,'red'],[680,693,'navy'],[975,988,'navy'],[990,1015,'orange'],[1020,1029,'navy'],[1033,1063,'red'],[1092,1116,'red'],[1122,1137,'navy'],[1142,1155,'olive'],[1158,1172,'orange']];
+bands.forEach(([a,b,c])=>{g.fillStyle=col[c];g.fillRect(0,(a-450)*ky,W,(b-a)*ky)});
+// zig-zag border
+const zc=['red','orange','navy','brown','olive'];
+for(let i=0,x=0;x<W+60;i++,x+=70*s){g.fillStyle=col[zc[i%5]];g.beginPath();g.moveTo(x,1250*0+(1246-450)*ky);g.lineTo(x+70*s/2,(1176-450)*ky);g.lineTo(x+70*s,(1246-450)*ky);g.fill()}
+function motif(cx){
+  g.save();g.translate(cx-fw/2,0);g.scale(s,ky);g.translate(-115,-450);
+  const tri=(x,y,w,h,c,up)=>{g.fillStyle=col[c];g.beginPath();if(up){g.moveTo(x-w/2,y+h);g.lineTo(x+w/2,y+h);g.lineTo(x,y)}else{g.moveTo(x-w/2,y);g.lineTo(x+w/2,y);g.lineTo(x,y+h)}g.fill()};
+  [[160,'brown'],[360,'navy'],[525,'orange'],[745,'navy'],[915,'brown'],[1090,'orange']].forEach(([x,c])=>tri(x,708,130,62,c,false));
+  [[170,'brown'],[360,'navy'],[520,'red'],[750,'brown'],[915,'navy'],[1085,'orange']].forEach(([x,c])=>tri(x,902,130,66,c,true));
+  const dia=(cx,cy,rings)=>{const c=21;for(let i=-6;i<=6;i++)for(let j=-6;j<=6;j++){const d=Math.abs(i)+Math.abs(j),r=rings.find(r=>d<=r[0]);if(!r)continue;g.fillStyle=col[r[1]];g.fillRect(cx+i*c-c/2,cy+j*c-c/2,c+.6,c+.6)}};
+  dia(265,835,[[1,'orange'],[2,'navy'],[3,'orange'],[5,'red']]);
+  dia(630,835,[[0,'orange'],[1,'navy'],[2,'cream'],[3,'navy'],[5,'red']]);
+  dia(1010,835,[[1,'orange'],[2,'navy'],[3,'orange'],[5,'red']]);
+  const tree=(cx,mid)=>{
+    g.fillStyle=col.red;
+    [[28,735],[66,755],[106,775],[106,795]].forEach(([w,y])=>g.fillRect(cx-w/2,y,w,21));
+    g.fillStyle=col[mid[0]];g.fillRect(cx-32,828,64,16);
+    g.fillStyle=col.navy;g.fillRect(cx-56,856,112,20);
+    g.fillStyle=col.red;g.fillRect(cx-56,886,112,22);g.fillRect(cx-34,908,68,18);
+    tri(cx,892,100,50,mid[1],true);g.fillStyle=col.red;g.fillRect(cx-56,886,112,18);
+  };
+  tree(443,['orange','orange']);tree(840,['olive','red']);
+  g.restore();
+}
+motif(W*.25);motif(W*.75);
+g.globalAlpha=1;weave(g,W,H,.22);
+const colorTex=new THREE.CanvasTexture(tex);colorTex.encoding=THREE.sRGBEncoding;
+
+const bump=mk(W,H),bg=bump.getContext('2d');bg.fillStyle='#808080';bg.fillRect(0,0,W,H);weave(bg,W,H,.5);
+const bumpTex=new THREE.CanvasTexture(bump);
+
+/* ---------- scene ---------- */
+const cv=document.getElementById('c');
+const R=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true});
+R.setPixelRatio(Math.min(devicePixelRatio,2));
+R.outputEncoding=THREE.sRGBEncoding;R.toneMapping=THREE.ACESFilmicToneMapping;R.toneMappingExposure=1.05;
+R.shadowMap.enabled=true;R.shadowMap.type=THREE.PCFSoftShadowMap;
+const scene=new THREE.Scene();
+const cam=new THREE.PerspectiveCamera(35,1,.1,60);
+const home={p:new THREE.Vector3(.3,1.45,5.6),t:new THREE.Vector3(0,.95,0)};
+cam.position.copy(home.p);
+const ctl=new THREE.OrbitControls(cam,cv);
+ctl.target.copy(home.t);ctl.enableDamping=true;ctl.dampingFactor=.07;
+ctl.minDistance=2.2;ctl.maxDistance=10;ctl.maxPolarAngle=1.75;ctl.autoRotateSpeed=1.4;ctl.update();
+
+scene.add(new THREE.HemisphereLight(0xfff6ea,0x8a7a68,.75));
+const key=new THREE.DirectionalLight(0xfff1de,1.5);key.position.set(3,5.5,4);key.castShadow=true;
+key.shadow.mapSize.set(2048,2048);key.shadow.camera.left=-3;key.shadow.camera.right=3;key.shadow.camera.top=4;key.shadow.camera.bottom=-2;key.shadow.bias=-.0005;key.shadow.radius=5;
+scene.add(key);
+const fill=new THREE.DirectionalLight(0xdfe8ff,.45);fill.position.set(-4,2,-2);scene.add(fill);
+const rim=new THREE.DirectionalLight(0xffffff,.5);rim.position.set(-2,3,-5);scene.add(rim);
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(30,30),new THREE.ShadowMaterial({opacity:.3}));
+ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;scene.add(ground);
+
+/* ---------- body mesh ---------- */
+const pos=[],uv=[],idx=[];
+for(let j=0;j<=NV;j++){const v=j/NV;for(let i=0;i<=NU;i++){const p=pt(TAU*(i%NU)/NU,v);pos.push(...p);uv.push(arc[i]/Ltot,v)}}
+for(let j=0;j<NV;j++)for(let i=0;i<NU;i++){const a=j*(NU+1)+i,b=a+1,c=a+NU+1,d=c+1;idx.push(a,c,b,b,c,d)}
+const bgeo=new THREE.BufferGeometry();
+bgeo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+bgeo.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+bgeo.setIndex(idx);bgeo.computeVertexNormals();
+{const n=bgeo.attributes.normal;for(let j=0;j<=NV;j++){const a=j*(NU+1),b=a+NU;const x=n.getX(a)+n.getX(b),y=n.getY(a)+n.getY(b),z=n.getZ(a)+n.getZ(b),l=Math.hypot(x,y,z)||1;n.setXYZ(a,x/l,y/l,z/l);n.setXYZ(b,x/l,y/l,z/l)}}
+const body=new THREE.Mesh(bgeo,new THREE.MeshStandardMaterial({map:colorTex,bumpMap:bumpTex,bumpScale:2.2,roughness:.95,metalness:0}));
+body.castShadow=body.receiveShadow=true;scene.add(body);
+const maxA=R.capabilities.getMaxAnisotropy();colorTex.anisotropy=bumpTex.anisotropy=maxA;
+
+/* caps: inner lining at the mouth and the base */
+function cap(v,k,y,color){
+  const p=[0,y,0];for(let i=0;i<NU;i++){const q=pt(TAU*i/NU,v);p.push(q[0]*k,y,q[2]*k)}
+  const ix=[];for(let i=0;i<NU;i++)ix.push(0,1+i,1+(i+1)%NU);
+  const g2=new THREE.BufferGeometry();g2.setAttribute('position',new THREE.Float32BufferAttribute(p,3));g2.setIndex(ix);g2.computeVertexNormals();
+  const m=new THREE.Mesh(g2,new THREE.MeshStandardMaterial({color,roughness:1,side:THREE.DoubleSide}));m.castShadow=m.receiveShadow=true;scene.add(m);
+}
+cap(1,.97,Ht-.02,0x5b4228);cap(0,1,.004,0xd9c39a);
+
+/* ---------- handles ---------- */
+const sc=mk(128,128),sg=sc.getContext('2d');sg.fillStyle=col.beige;sg.fillRect(0,0,128,128);weave(sg,128,128,.25);
+for(let i=0;i<900;i++){sg.fillStyle='rgba(90,70,40,'+Math.random()*.12+')';sg.fillRect(Math.random()*128,Math.random()*128,2,1)}
+const strapTex=new THREE.CanvasTexture(sc);strapTex.wrapS=strapTex.wrapT=THREE.RepeatWrapping;strapTex.encoding=THREE.sRGBEncoding;strapTex.anisotropy=maxA;
+const strapMat=new THREE.MeshStandardMaterial({map:strapTex,bumpMap:strapTex,bumpScale:1.2,roughness:.95,side:THREE.DoubleSide});
+const yf=Ht-.22, zf=zAt(.5,yf/Ht)+.02;
+function strap(sign){
+  const L=[[-.5,yf,0],[-.48,Ht+.02,.2],[-.42,Ht+.3,.5],[-.34,Ht+.58,.78],[-.2,Ht+.8,.94],[0,Ht+.87,1]];
+  const P=[];L.forEach(([x,y,p])=>P.push(new THREE.Vector3(x,y,sign*(zf+(.045-zf)*p))));
+  for(let i=L.length-2;i>=0;i--){const q=P[i];P.push(new THREE.Vector3(-q.x,q.y,q.z))}
+  const curve=new THREE.CatmullRomCurve3(P,false,'catmullrom',.5),S=110,hw=.115,ht=.018,vs=[],us=[],ix=[];
+  const Z=new THREE.Vector3(0,0,1);
+  for(let k=0;k<=S;k++){
+    const u=k/S,p=curve.getPoint(u),T=curve.getTangent(u),Wd=new THREE.Vector3().crossVectors(Z,T).normalize(),N=new THREE.Vector3().crossVectors(T,Wd).normalize();
+    [[1,1],[-1,1],[-1,-1],[1,-1]].forEach(([a,b],e)=>{vs.push(p.x+hw*a*Wd.x+ht*b*N.x,p.y+hw*a*Wd.y+ht*b*N.y,p.z+hw*a*Wd.z+ht*b*N.z);us.push([0,1,1,0][e],u*10)});
+  }
+  for(let k=0;k<S;k++)for(let e=0;e<4;e++){const a=k*4+e,b=k*4+(e+1)%4,c=a+4,d=b+4;ix.push(a,b,c,b,d,c)}
+  const g3=new THREE.BufferGeometry();g3.setAttribute('position',new THREE.Float32BufferAttribute(vs,3));g3.setAttribute('uv',new THREE.Float32BufferAttribute(us,2));g3.setIndex(ix);g3.computeVertexNormals();
+  const m=new THREE.Mesh(g3,strapMat);m.castShadow=m.receiveShadow=true;scene.add(m);
+}
+strap(1);strap(-1);
+
+/* stitched X-box where the strap meets the bag */
+const xc=mk(128,128),xg=xc.getContext('2d');xg.strokeStyle='#6f5733';xg.lineWidth=3;xg.setLineDash([7,4]);
+xg.strokeRect(10,10,108,108);xg.beginPath();xg.moveTo(10,10);xg.lineTo(118,118);xg.moveTo(118,10);xg.lineTo(10,118);xg.stroke();
+const xTex=new THREE.CanvasTexture(xc);xTex.encoding=THREE.sRGBEncoding;
+[[1,1],[-1,1],[1,-1],[-1,-1]].forEach(([sx,sz])=>{
+  const m=new THREE.Mesh(new THREE.PlaneGeometry(.2,.2),new THREE.MeshBasicMaterial({map:xTex,transparent:true,opacity:.75,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2}));
+  m.position.set(sx*.5,Ht-.13,sz*(zf+.042));if(sz<0)m.rotation.y=Math.PI;scene.add(m);
+});
+
+/* ---------- ui + loop ---------- */
+function resize(){const w=innerWidth,h=innerHeight;R.setSize(w,h,false);cam.aspect=w/h;cam.updateProjectionMatrix()}
+addEventListener('resize',resize);resize();
+const rot=document.getElementById('rot');
+rot.onclick=()=>{ctl.autoRotate=!ctl.autoRotate;rot.setAttribute('aria-pressed',ctl.autoRotate)};
+document.getElementById('reset').onclick=()=>{cam.position.copy(home.p);ctl.target.copy(home.t);ctl.update()};
+(function loop(){requestAnimationFrame(loop);ctl.update();R.render(scene,cam)})();
+</script>
+</body>
+</html>
